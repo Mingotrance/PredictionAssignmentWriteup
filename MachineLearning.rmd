@@ -1,0 +1,158 @@
+---
+title: "MachineLearningProject"
+author: "Gabi Mingorance"
+date: "25/1/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+1. Data is loaded and cleaned (removing NA cases)
+2. Three different models are then explored and compared.
+3. Finally, the best of them is used to predict.
+
+
+
+
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(rattle)
+library(randomForest)
+library(knitr)
+```
+
+## Download data training and testing data and tidy up. 
+
+Only if the files do not yet exist, they are downloaded.
+
+
+```{r, cache=TRUE}
+set.seed(12345)
+
+
+if(!file.exists("pml-training.csv")){
+        fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+        download.file(fileUrl,destfile="./pml-training.csv")
+}
+if(!file.exists("pml-testing.csv")){
+        fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+        download.file(fileUrl,destfile="./pml-testing.csv")
+}
+
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+
+
+```
+
+Clean up data
+
+
+```{r, cache=TRUE}
+
+columnsToBeRemoved <- which(colSums(is.na(training) |training=="")>0.9*dim(training)[1]) 
+training <- training[,-columnsToBeRemoved]
+training <- training[,-c(1:7)]
+
+# We do the same for the test set
+columnsToBeRemoved <- which(colSums(is.na(testing) |testing=="")>0.9*dim(testing)[1]) 
+testing <- testing[,-columnsToBeRemoved]
+testing <- testing[,-1]
+```
+
+
+Split Training data in training and testing to test our models before consuming the actual testing data.
+
+
+```{r}
+partition <- createDataPartition(training$classe, p=0.6, list=FALSE)
+subTraining <- training[partition, ]
+subTesting <- training[-partition, ]
+
+```
+
+
+## Model Comparison 
+
+
+*Clasification Tree*
+
+```{r}
+model_classificationtree <- rpart(classe ~ ., data=subTraining, method="class")
+fancyRpartPlot(model_classificationtree)
+
+subprediction <- predict(model_classificationtree,newdata=subTesting, type = "class")
+
+confusion <- confusionMatrix(subTesting$classe,subprediction)
+
+confusion$table
+
+confusion$overall[1]
+```
+
+*Random Forest*
+
+```{r}
+
+model_RandomForest <- randomForest(classe ~ ., data=subTraining)
+
+print(model_RandomForest)
+plot(model_RandomForest,main="Random forest by number of predictors")
+
+subprediction <- predict(model_RandomForest,newdata=subTesting)
+
+confusion <- confusionMatrix(subTesting$classe,subprediction)
+
+confusion$table
+
+confusion$overall[1]
+
+```
+
+*Gradient Boost*
+
+```{r}
+
+control <- trainControl(method = "repeatedcv",
+                           number = 5,
+                           repeats = 1)
+
+model_GradientBoost <- train(classe ~ ., data=subTraining, method = "gbm",trControl = control,verbose = FALSE)
+
+print(model_GradientBoost)
+plot(model_GradientBoost)
+
+subprediction <- predict(model_GradientBoost,newdata=subTesting)
+
+confusion <- confusionMatrix(subTesting$classe,subprediction)
+confusion$table
+confusion$overall[1]
+
+```
+
+## Prediction
+
+As a summary our classiffication tree shows an accuracy of 75%, Random Forest has in this case 99% and Gradient Boost model close to 96%, so,
+
+It seems that *Random Forest* performs better (99%) therefore we finally apply this model to the testing set to predict the 20 test cases.
+
+```{r, cache=TRUE}
+prediction <- predict(model_RandomForest,newdata=testing)
+prediction
+```
+
+
+
